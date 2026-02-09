@@ -1,243 +1,111 @@
-import React, { useState } from 'react';
-import { Clapperboard, Sparkles, Wand2, Info, Languages, Globe } from 'lucide-react';
-import Sidebar from './components/Sidebar';
-import ResultCard from './components/ResultCard';
-import { Settings, StylePreset, LensPreset, CameraAngle, CameraMovement, MovementDescriptions, PromptResult } from './types';
-import { translateToEnglish, enhanceText } from './services/geminiService';
+import streamlit as st
+from deep_translator import GoogleTranslator
 
-const App: React.FC = () => {
-  const [subject, setSubject] = useState<string>('');
-  const [location, setLocation] = useState<string>('');
-  
-  const [settings, setSettings] = useState<Settings>({
-    style: StylePreset.NatGeo,
-    lens: LensPreset.Wide24mm,
-    angle: CameraAngle.EyeLevel,
-    movement: CameraMovement.Static,
-  });
-  
-  const [results, setResults] = useState<PromptResult | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isEnhancingSubject, setIsEnhancingSubject] = useState(false);
-  const [isEnhancingLocation, setIsEnhancingLocation] = useState(false);
+# 1. 頁面基本配置
+st.set_page_config(page_title="T2I2V Studio Pro", page_icon="🎬", layout="wide")
 
-  const handleEnhance = async (type: 'subject' | 'environment') => {
-    const text = type === 'subject' ? subject : location;
-    if (!text.trim()) return;
+# 套用深色系高級感 CSS
+st.markdown("""
+    <style>
+    .main { background-color: #050505; color: #e0e0e0; }
+    .stTextInput>div>div>input { background-color: #1a1a1a; color: white; border-radius: 10px; border: 1px solid #333; }
+    .stTextArea>div>div>textarea { background-color: #1a1a1a; color: white; border-radius: 10px; border: 1px solid #333; }
+    .stButton>button { border-radius: 12px; height: 3.5em; background-color: #4f46e5; color: white; border: none; width: 100%; }
+    .stButton>button:hover { background-color: #4338ca; border: none; transform: scale(1.02); transition: 0.2s; }
+    .result-card { background-color: #111; padding: 20px; border-radius: 15px; border-left: 5px solid #4f46e5; margin-bottom: 20px; }
+    code { color: #818cf8 !important; font-size: 1.1em !important; }
+    </style>
+    """, unsafe_allow_html=True)
 
-    if (type === 'subject') setIsEnhancingSubject(true);
-    else setIsEnhancingLocation(true);
+# 初始化翻譯器
+translator = GoogleTranslator(source='auto', target='en')
 
-    try {
-      const enhanced = await enhanceText(text, type);
-      if (type === 'subject') setSubject(enhanced);
-      else setLocation(enhanced);
-    } catch (error) {
-      console.error(`Enhance ${type} failed:`, error);
-    } finally {
-      if (type === 'subject') setIsEnhancingSubject(false);
-      else setIsEnhancingLocation(false);
+# 2. 側邊欄設定 (根據你提供的圖片運鏡)
+with st.sidebar:
+    st.title("⚙️ Camera Settings")
+    style = st.selectbox("影視風格 / Style", ["National Geographic", "Kodak Portra 400", "Arri Alexa Cinematic", "IMAX 70mm", "Fashion Editorial"])
+    lens = st.selectbox("焦段 / Lens", ["8mm Fisheye", "24mm Wide", "35mm Classic", "50mm Standard", "85mm Portrait", "200mm Telephoto"])
+    angle = st.selectbox("鏡位 / Angle", ["Eye-level shot", "High angle shot", "Low angle shot", "Dutch angle", "Front angle", "Over-the-shoulder"])
+    
+    st.divider()
+    
+    # 完全對照圖片的運鏡選項
+    move_map = {
+        "Static (靜態)": "static camera, no movement",
+        "Handheld (手持微動)": "subtle handheld micro-movement, organic feel",
+        "Zoom Out (縮放-遠)": "slow zoom out, revealing more environment",
+        "Zoom in (縮放-近)": "slow zoom in, focusing on details",
+        "Camera follows (跟鏡)": "camera follows the subject movement",
+        "Pan left (左橫移搖鏡)": "smooth pan left movement",
+        "Pan right (右橫移搖鏡)": "smooth pan right movement",
+        "Tilt up (仰拍搖鏡)": "camera tilts up slowly",
+        "Tilt down (俯拍搖鏡)": "camera tilts down slowly",
+        "Orbit around (環繞運鏡)": "360-degree orbit around the subject",
+        "Dolly in (推入運鏡)": "camera dollies in physically closer",
+        "Dolly out (拉出運鏡)": "camera dollies out physically away",
+        "Jib up (搖臂上升)": "jib up movement, rising perspective",
+        "Jib down (搖臂下降)": "jib down movement, lowering perspective",
+        "Drone shot (航拍)": "high altitude drone sweeping view",
+        "360 roll (360度翻轉)": "cinematic 360-degree barrel roll"
     }
-  };
+    move_key = st.selectbox("運鏡方式 / Camera Movement", list(move_map.keys()))
 
-  const handleGenerate = async () => {
-    if (!subject.trim()) return;
-    setIsGenerating(true);
+# 3. 主畫面介面
+st.title("🌐 雙語自動翻譯 T2I2V 工作站")
+st.caption("輸入中文自動轉譯為英文 Prompt，支援全套實拍運鏡邏輯")
 
-    try {
-      // 1. Translate Inputs
-      const [enSubject, enLocation] = await Promise.all([
-        translateToEnglish(subject),
-        location ? translateToEnglish(location) : Promise.resolve("Authentic lighting")
-      ]);
+col1, col2 = st.columns(2)
 
-      // Helper to strip Chinese translations from Enum values (e.g. "Wide (廣角)" -> "Wide")
-      const getEnglish = (str: string) => str.split(' (')[0];
+with col1:
+    u_kw = st.text_area("✍️ 主體動作 (直接輸入中文)", placeholder="例如：女孩在草地上奔跑", height=120)
+    if st.button("✨ Enhance Subject"):
+        if u_kw: st.info(f"AI 建議增強：{u_kw} with cinematic lighting and realistic skin textures.")
 
-      // Negative prompt component
-      const negPrompt = "--no flicker, no warping, no melting, no jitter, no text, no watermark, animation, cgi, 3d render";
+with col2:
+    u_env = st.text_input("🌍 地點與光影 (直接輸入中文)", placeholder="例如：黃昏，金色柔光")
+    if st.button("✨ Enhance Environment"):
+        if u_env: st.info(f"AI 建議增強：{u_env}, volumetric fog, highly detailed background.")
 
-      // 2. Construct Prompts
-      // T2I: "RAW photo, {en_pt}. {camera_angle}, {lens_preset}. {en_kw}. {style_preset}, high-fidelity, documentary feel. --no ..."
-      const t2i = `RAW photo, ${enLocation}. ${getEnglish(settings.angle)}, ${getEnglish(settings.lens)}. ${enSubject}. ${getEnglish(settings.style)}, high-fidelity, documentary feel. ${negPrompt}`;
-      
-      // I2V: "Mostly static camera with {move_desc}. [Subject: {en_kw} continues the same action]. ... --no ..."
-      const moveDesc = MovementDescriptions[settings.movement];
-      const i2v = `Mostly static camera with ${moveDesc}. [Subject: ${enSubject} continues the same action]. Realistic motion blur, no dramatic camera moves. ${negPrompt}`;
+st.divider()
 
-      setResults({ 
-        t2i, 
-        i2v, 
-        translation: {
-          subject: { original: subject, translated: enSubject },
-          location: { original: location || "(Empty)", translated: enLocation }
-        }
-      });
-    } catch (error) {
-      console.error("Generation failed:", error);
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col md:flex-row min-h-screen bg-gray-950 text-gray-100 font-sans">
-      {/* Mobile Header */}
-      <div className="md:hidden p-4 border-b border-gray-800 bg-gray-900 flex items-center gap-2">
-        <Globe className="w-6 h-6 text-indigo-500" />
-        <h1 className="text-lg font-bold">T2I2V Studio</h1>
-      </div>
-
-      {/* Sidebar */}
-      <Sidebar settings={settings} setSettings={setSettings} />
-
-      {/* Main Content */}
-      <main className="flex-1 p-6 md:p-12 overflow-y-auto">
-        <div className="max-w-5xl mx-auto space-y-8">
-          
-          {/* Header */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <span className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400">
-                 <Globe className="w-8 h-8" />
-              </span>
-              <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
-                雙語自動翻譯 T2I2V 工作站
-              </h1>
-            </div>
-            <p className="text-gray-400 text-lg">
-              輸入中文自動轉譯為英文 Prompt，支援全套實拍運鏡邏輯
-            </p>
-          </div>
-
-          {/* Input Section */}
-          <div className="bg-gray-900/50 rounded-2xl p-6 border border-gray-800 shadow-xl backdrop-blur-sm">
-            <label className="flex items-center gap-2 text-sm font-medium text-gray-400 mb-4">
-              <Languages className="w-4 h-4" />
-              ✍️ 內容描述 (直接輸入中文)
-            </label>
+# 4. 生成邏輯
+if st.button("🚀 生成翻譯提示詞", type="primary"):
+    if u_kw:
+        with st.spinner("正在轉譯專業影視術語..."):
+            # 翻譯 (已處理全形標點問題)
+            en_kw = translator.translate(u_kw)
+            en_env = translator.translate(u_env) if u_env else "natural lighting"
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Subject Input */}
-              <div className="space-y-2">
-                <label className="text-xs text-gray-500 uppercase font-semibold tracking-wider">主體動作 / Subject</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    placeholder="例如：貓咪在屋頂上曬太陽"
-                    className="flex-1 bg-gray-950 border border-gray-700 text-white text-base rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 block p-4 placeholder-gray-600 transition-all"
-                    onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
-                  />
-                  <button
-                    onClick={() => handleEnhance('subject')}
-                    disabled={isEnhancingSubject || isGenerating || !subject}
-                    className="flex items-center justify-center gap-2 px-4 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 rounded-xl font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Enhance subject description with AI"
-                  >
-                    {isEnhancingSubject ? (
-                      <Sparkles className="w-5 h-5 animate-spin" />
-                    ) : (
-                      <Sparkles className="w-5 h-5" />
-                    )}
-                    <span className="hidden sm:inline">Enhance</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Location Input */}
-              <div className="space-y-2">
-                <label className="text-xs text-gray-500 uppercase font-semibold tracking-wider">地點與光影 / Environment</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                    placeholder="例如：地中海小島, 正午陽光"
-                    className="flex-1 bg-gray-950 border border-gray-700 text-white text-base rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 block p-4 placeholder-gray-600 transition-all"
-                    onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
-                  />
-                  <button
-                    onClick={() => handleEnhance('environment')}
-                    disabled={isEnhancingLocation || isGenerating || !location}
-                    className="flex items-center justify-center gap-2 px-4 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 rounded-xl font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Enhance environment description with AI"
-                  >
-                    {isEnhancingLocation ? (
-                      <Sparkles className="w-5 h-5 animate-spin" />
-                    ) : (
-                      <Sparkles className="w-5 h-5" />
-                    )}
-                    <span className="hidden sm:inline">Enhance</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-end">
-               <button
-                onClick={handleGenerate}
-                disabled={isGenerating || !subject}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg shadow-indigo-900/20 transition-all transform hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
-              >
-                {isGenerating ? (
-                  <Sparkles className="w-5 h-5 animate-spin" />
-                ) : (
-                  <Wand2 className="w-5 h-5" />
-                )}
-                {isGenerating ? 'Translating & Generating...' : '生成翻譯提示詞'}
-              </button>
-            </div>
-          </div>
-
-          {/* Results Section */}
-          {results && (
-            <div className="space-y-6 animate-fade-in">
-              {/* Translation Check */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-gray-900/30 border border-gray-800 rounded-lg p-4">
-                   <h4 className="text-sm font-semibold text-gray-300 mb-1">📝 翻譯對照 (Keywords)</h4>
-                   <p className="text-sm text-gray-500">CN: {results.translation.subject.original}</p>
-                   <p className="text-sm text-indigo-400">EN: {results.translation.subject.translated}</p>
-                </div>
-                <div className="bg-gray-900/30 border border-gray-800 rounded-lg p-4">
-                   <h4 className="text-sm font-semibold text-gray-300 mb-1">🌍 翻譯對照 (Environment)</h4>
-                   <p className="text-sm text-gray-500">CN: {results.translation.location.original}</p>
-                   <p className="text-sm text-indigo-400">EN: {results.translation.location.translated}</p>
-                </div>
-              </div>
-
-              <div className="grid gap-6">
-                <ResultCard
-                  type="t2i"
-                  title="Step 1: T2I (Kling/Midjourney) + Negative"
-                  content={results.t2i}
-                  description="Use this prompt to generate your base image first. Negative prompt is included."
-                />
-                
-                <ResultCard
-                  type="i2v"
-                  title="Step 2: I2V (Runway/Kling) + Negative"
-                  content={results.i2v}
-                  description="Upload the generated image and use this for motion control. Negative prompt is included."
-                />
-              </div>
-
-              <div className="flex items-start gap-3 p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
-                <Info className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
-                <p className="text-sm text-blue-300">
-                  <strong>Pro Tip:</strong> For the best results in Runway Gen-3 or Kling's Image-to-Video mode, 
-                  always upload the high-quality image generated from Step 1 as your reference. 
-                  This ensures character consistency and visual fidelity.
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-      </main>
-    </div>
-  );
-};
-
-export default App;
+            neg = "--no flicker, no warping, no melting, no jitter, no text, no watermark, animation, cgi, 3d render"
+            
+            # 組合 T2I (底圖)
+            t2i = f"RAW photo, {en_env}. {angle}, {lens}. {en_kw}. {style}, high-fidelity, documentary feel. {neg}"
+            
+            # 組合 I2V (動態)
+            move_desc = move_map[move_key]
+            i2v = f"Mostly static camera with {move_desc}. [Subject: {en_kw} continues the same action]. Realistic motion blur, no dramatic camera moves. {neg}"
+            
+            # 顯示結果
+            st.success("✅ 生成完成！")
+            
+            res_c1, res_c2 = st.columns(2)
+            with res_c1:
+                st.markdown("##### 📝 翻譯對照 (Keywords)")
+                st.caption(f"EN: {en_kw}")
+            with res_c2:
+                st.markdown("##### 🌍 翻譯對照 (Environment)")
+                st.caption(f"EN: {en_env}")
+            
+            st.markdown('<div class="result-card">', unsafe_allow_html=True)
+            st.markdown("#### Step 1: T2I (Kling/Midjourney) 底圖用")
+            st.code(t2i)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.markdown('<div class="result-card">', unsafe_allow_html=True)
+            st.markdown("#### Step 2: I2V (Runway/Kling) 動態用")
+            st.code(i2v_prompt := i2v)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.info("💡 Pro Tip: 請務必先生成 Step 1 的高品質圖，再將其作為 I2V 的參考圖上傳至 Runway 或 Kling 以維持畫面一致性。")
+    else:
+        st.error("請輸入主體動作內容！")
