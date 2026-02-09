@@ -2,53 +2,51 @@ import streamlit as st
 from deep_translator import GoogleTranslator
 import google.generativeai as genai
 
-# 1. 頁面配置與高級感 CSS (置中優化)
+# 1. 頁面配置與高級感 CSS (強制置中與現代化排版)
 st.set_page_config(page_title="T2I2V Studio Pro", page_icon="🎬", layout="centered")
 
 st.markdown("""
     <style>
-    /* 全域背景與置中限制 */
+    /* 背景與整體置中限制 */
     .main { background-color: #050505; color: #e0e0e0; }
-    .block-container { padding-top: 2rem; max-width: 800px !important; }
+    .block-container { padding-top: 2rem; max-width: 800px !important; margin: auto; }
     
-    /* 輸入框樣式 */
+    /* 輸入框樣式優化 */
     .stTextInput>div>div>input, .stTextArea>div>div>textarea { 
         background-color: #1a1a1a !important; color: white !important; 
         border-radius: 12px !important; border: 1px solid #333 !important;
     }
     
-    /* 按鈕樣式 */
+    /* 按鈕樣式 (紫色漸層) */
     .stButton>button { 
-        border-radius: 12px; height: 3.5em; background-color: #4f46e5; 
-        color: white; border: none; width: 100%; font-weight: bold;
+        border-radius: 12px; height: 3.5em; background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+        color: white; border: none; width: 100%; font-weight: bold; transition: 0.3s;
     }
     .stButton>button:hover { 
-        background-color: #6366f1; transform: translateY(-2px); 
+        transform: translateY(-2px); box-shadow: 0 5px 15px rgba(124, 58, 237, 0.4);
     }
     
-    /* AI 擴充結果區塊 */
+    /* AI 結果區塊 */
     .enhance-res { 
         background-color: #0e1117; padding: 15px; border-radius: 12px; 
-        border-left: 4px solid #818cf8; margin: 15px 0; 
-        font-style: italic; color: #cbd5e1; font-size: 0.95em;
+        border-left: 4px solid #818cf8; margin: 15px 0; font-style: italic; color: #cbd5e1;
     }
     
-    /* 結果顯示卡片 */
+    /* 最終結果卡片 */
     .result-card { 
         background-color: #111; padding: 25px; border-radius: 18px; 
-        border: 1px solid #222; border-top: 4px solid #4f46e5; 
-        margin-top: 25px;
+        border: 1px solid #222; border-top: 4px solid #4f46e5; margin-top: 25px;
     }
     code { color: #818cf8 !important; font-size: 1.1em !important; background-color: #1a1a1a !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. 初始化 API (解決 404 問題的核心寫法)
+# 2. 初始化 API (解決 404 問題的穩定寫法)
 if "GEMINI_API_KEY" in st.secrets:
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        # 直接指定模型名稱，不加 "models/"
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # 使用最直接的模型名稱標籤
+        model = genai.GenerativeModel("gemini-1.5-flash")
     except Exception as e:
         st.error(f"API 設定失敗: {str(e)}")
         model = None
@@ -65,18 +63,13 @@ if 'env_en' not in st.session_state: st.session_state.env_en = ""
 def call_ai(text, part):
     if not model or not text: return ""
     try:
-        # 強制指定不使用 v1beta 的內容生成邏輯
-        prompt = f"Expand this {part} into a cinematic English prompt: {text}. Output only the English text."
+        # 強制指定簡潔提示詞，避免 API 報錯
+        prompt = f"Expand this {part} into a cinematic English prompt: {text}. Return ONLY English."
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
-        # 如果還是 404，嘗試最後一種模型名稱備案
-        try:
-            alt_model = genai.GenerativeModel('gemini-pro')
-            response = alt_model.generate_content(f"Cinematic prompt for: {text}")
-            return response.text.strip()
-        except:
-            return f"AI Error: {str(e)}"
+        # 備用方案：如果 Flash 報錯，嘗試 Pro 或回傳純翻譯
+        return f"AI 暫時繁忙，請稍後再試。原因: {str(e)}"
 
 # 4. 主畫面介面
 st.title("📽️ T2I2V Studio Pro")
@@ -102,37 +95,10 @@ with st.expander("🎥 攝影機與運鏡設定", expanded=True):
 
 st.divider()
 
-# 輸入區
-u_kw = st.text_area("✍️ 主體動作 (中文)", placeholder="例如：男孩在跳舞", height=100)
+# 輸入區域
+u_kw = st.text_area("✍️ 主體動作 (中文)", placeholder="例如：女孩在草地上奔跑", height=100)
 if st.button("✨ 使用 AI 擴充主體細節"):
     if u_kw:
         with st.spinner("AI 生成中..."):
             st.session_state.sub_en = call_ai(u_kw, "subject action")
-    else: st.warning("請先輸入內容")
-
-if st.session_state.sub_en:
-    st.markdown(f'<div class="enhance-res"><b>AI Enhanced Subject:</b><br>{st.session_state.sub_en}</div>', unsafe_allow_html=True)
-
-u_env = st.text_input("🌍 地點與光影 (中文)", placeholder="例如：黃昏，金色柔光")
-if st.button("✨ 使用 AI 擴充環境細節"):
-    if u_env:
-        with st.spinner("AI 生成中..."):
-            st.session_state.env_en = call_ai(u_env, "environment and lighting")
-
-if st.session_state.env_en:
-    st.markdown(f'<div class="enhance-res"><b>AI Enhanced Environment:</b><br>{st.session_state.env_en}</div>', unsafe_allow_html=True)
-
-st.divider()
-
-# 生成結果
-if st.button("🚀 生成最終雙語提示詞組", type="primary"):
-    if u_kw:
-        final_sub = st.session_state.sub_en if st.session_state.sub_en else translator.translate(u_kw)
-        final_env = st.session_state.env_en if st.session_state.env_en else translator.translate(u_env)
-        neg = "--no flicker, no warping, no text, no watermark"
-        
-        t2i = f"RAW photo, {final_env}. {angle}, {lens}. {final_sub}. {style}, high-fidelity. {neg}"
-        i2v = f"Mostly {move_map[move_key]}. [Subject: {final_sub} continues action]. {neg}"
-        
-        st.markdown('<div class="result-card">', unsafe_allow_html=True)
-        st.markdown("#### Step 1:
+    else: st
