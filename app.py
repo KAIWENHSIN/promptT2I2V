@@ -9,7 +9,22 @@ import google.generativeai as genai
 # ✅ 正確做法：從 Streamlit 的秘密空間讀取
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
-
+def ai_enhance(text, part_type):
+    if not text: return ""
+    
+    # 檢查 API Key 是否存在
+    if "GEMINI_API_KEY" not in st.secrets:
+        return f"⚠️ 錯誤：請在 Secrets 中設定 API Key！"
+        
+    try:
+        # 確保模型是 1.5-flash
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        prompt = f"你是一位專業影視提示詞專家。請將以下『{part_type}』內容擴充為更具電影感、細節豐富的英文描述。只需回傳擴充後的英文內容，不要解釋。\n內容：{text}"
+        
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    except Exception as e:
+        return f"❌ API 呼叫失敗：{str(e)}"
 
 # 1. 頁面配置
 st.set_page_config(page_title="T2I2V Studio Pro", page_icon="🎬", layout="wide")
